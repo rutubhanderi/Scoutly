@@ -5,3 +5,10 @@ langchain
 langchain-groq
 pymongo
 dnspython
+
+# Backend Dependencies
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+shortuuid

@@ -21,6 +21,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class DeleteResponse(BaseModel):
+    job_id: str
+    acknowledged: bool
+    message: str
+
+class DeleteAllResponse(BaseModel):
+    deleted_jobs_count: int
+    deleted_candidates_count: int
+    message: str
+
+
 class SourcingRequest(BaseModel):
     linkedin_prompt: Optional[str] = Field(None, example="Senior Golang Developer in Bangalore")
     github_prompt: Optional[str] = Field(None, example="Python developer in India with FastAPI contributions")
@@ -75,6 +86,40 @@ async def get_job_results(job_id: str):
 async def list_all_jobs():
     jobs = db.get_all_jobs()
     return {"jobs": jobs}
+
+
+@app.delete("/sourcing-jobs/{job_id}", response_model=DeleteResponse)
+async def delete_sourcing_job(job_id: str):
+    """
+    Deletes a specific sourcing job and all of its associated candidates.
+    """
+    # First, verify the job exists to provide a clear 404 error
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    was_deleted = db.delete_job(job_id)
+    if not was_deleted:
+        # This case is unlikely if the above check passes, but it's good practice
+        raise HTTPException(status_code=500, detail="Failed to delete the job.")
+
+    return {
+        "job_id": job_id,
+        "acknowledged": True,
+        "message": f"Job '{job_id}' and all its candidates have been successfully deleted."
+    }
+
+@app.delete("/sourcing-jobs", response_model=DeleteAllResponse)
+async def delete_all_sourcing_jobs():
+    """
+    Deletes ALL sourcing jobs and ALL candidates. Use with caution.
+    """
+    result = db.delete_all_jobs()
+    return {
+        "deleted_jobs_count": result["deleted_jobs_count"],
+        "deleted_candidates_count": result["deleted_candidates_count"],
+        "message": "All jobs and candidates have been cleared from the database."
+    }
 
 @app.get("/")
 async def root():

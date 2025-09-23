@@ -76,3 +76,23 @@ class TalentPipelineDB:
         except Exception as e:
             print(f"  -> An error occurred while fetching candidates for job {job_id}: {e}")
             return []
+
+    def delete_job(self, job_id: str) -> bool:
+        """Deletes a job and all its associated candidates."""
+        # Delete the job document
+        job_delete_result = self.jobs_collection.delete_one({"job_id": job_id})
+        
+        if job_delete_result.deleted_count > 0:
+            # If the job was found and deleted, delete its candidates
+            self.candidates_collection.delete_many({"job_id": job_id})
+            return True
+        return False
+
+    def delete_all_jobs(self) -> dict:
+        """Deletes all jobs and all candidates from the database."""
+        deleted_jobs = self.jobs_collection.delete_many({})
+        deleted_candidates = self.candidates_collection.delete_many({})
+        return {
+            "deleted_jobs_count": deleted_jobs.deleted_count,
+            "deleted_candidates_count": deleted_candidates.deleted_count
+        }

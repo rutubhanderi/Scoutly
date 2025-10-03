@@ -1,20 +1,67 @@
-import { useEffect, useState } from "react";
-import axios from "axios";
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import Dashboard from './pages/Dashboard';
 
-function App() {
-  const [msg, setMsg] = useState("");
-
-  useEffect(() => {
-    axios.get("http://localhost:5000/")
-      .then(res => setMsg(res.data.message))
-      .catch(err => console.error(err));
-  }, []);
+// Component to handle redirect logic
+const AppRoutes = () => {
+  const { isAuthenticated } = useAuth();
 
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold">Frontend Connected</h1>
-      <p>{msg}</p>
-    </div>
+    <Routes>
+      {/* Public Routes */}
+      <Route 
+        path="/login" 
+        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} 
+      />
+      <Route 
+        path="/signup" 
+        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Signup />} 
+      />
+      
+      {/* Protected Routes */}
+      <Route 
+        path="/dashboard" 
+        element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        } 
+      />
+      
+      {/* Default redirect */}
+      <Route 
+        path="/" 
+        element={
+          isAuthenticated ? 
+          <Navigate to="/dashboard" replace /> : 
+          <Navigate to="/login" replace />
+        } 
+      />
+      
+      {/* Catch all route */}
+      <Route 
+        path="*" 
+        element={
+          <Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />
+        } 
+      />
+    </Routes>
+  );
+};
+
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <div className="App">
+          <AppRoutes />
+        </div>
+      </Router>
+    </AuthProvider>
   );
 }
 

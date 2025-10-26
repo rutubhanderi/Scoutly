@@ -2,6 +2,9 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const multer = require("multer");
+const FormData = require("form-data");
+const axios = require("axios");
 
 // Import routes
 const authRoutes = require("./routes/auth");
@@ -9,6 +12,12 @@ const auth = require("./middleware/auth");
 
 dotenv.config();
 const app = express();
+
+// Configure multer for file uploads
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
 
 // Middlewares
 app.use(express.json());
@@ -51,6 +60,87 @@ app.get("/api/status", (req, res) => {
     timestamp: new Date().toISOString(),
     status: "success"
   });
+});
+
+// JD Processing route - proxies to FastAPI
+app.post("/api/process-jd", auth, upload.single("file"), async (req, res) => {
+  try {
+    const { jd_text } = req.body;
+    const file = req.file;
+
+    // Check if we have text or file
+    if (!jd_text && !file) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Either jd_text or file must be provided." 
+      });
+    }
+
+    // Create FormData for FastAPI
+    const formData = new FormData();
+    
+    if (file) {
+      formData.append("file", file.buffer, {
+        filename: file.originalname,
+        contentType: file.mimetype
+      });
+    } else if (jd_text) {
+      formData.append("jd_text", jd_text);
+    }
+
+    // Forward request to FastAPI
+    const fastApiUrl = process.env.FASTAPI_URL || "http://127.0.0.1:8000";
+    const response = await axios.post(
+      `${fastApiUrl}/process-jd`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+        },
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error processing JD:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || "Failed to process job description" 
+    });
+  }
+});
+
+// Generate prompts from text - proxy to FastAPI
+app.post("/api/generate-prompts", auth, async (req, res) => {
+  try {
+    const { jd_text } = req.body;
+
+    if (!jd_text) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "jd_text is required." 
+      });
+    }
+
+    const fastApiUrl = process.env.FASTAPI_URL || "http://127.0.0.1:8000";
+    const response = await axios.post(
+      `${fastApiUrl}/generate-prompts`,
+      { jd_text },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error generating prompts:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || "Failed to generate prompts" 
+    });
+  }
 });
 
 const PORT = process.env.PORT || 5000;

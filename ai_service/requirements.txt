@@ -1,14 +1,26 @@
+# Core Dependencies
 requests
 python-dotenv
+shortuuid
+pydantic
+
+# AI and NLP
 spacy
 langchain
 langchain-groq
+
+# Database
 pymongo
 dnspython
 
-# Backend Dependencies
+# Backend (FastAPI)
 fastapi
 uvicorn[standard]
-pydantic
 python-multipart
-shortuuid
+
+# JD Processing (PDF & Image Handling)
+PyPDF2
+pytesseract
+Pillow
+opencv-python
+pdf2image

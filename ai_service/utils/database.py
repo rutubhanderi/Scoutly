@@ -96,3 +96,35 @@ class TalentPipelineDB:
             "deleted_jobs_count": deleted_jobs.deleted_count,
             "deleted_candidates_count": deleted_candidates.deleted_count
         }
+
+    def cleanup_old_jobs(self, days_old: int = 30) -> dict:
+        """
+        Deletes jobs and candidates older than specified days.
+        Default is 30 days.
+        """
+        cutoff_date = datetime.datetime.utcnow() - datetime.timedelta(days=days_old)
+        
+        # Find old jobs
+        old_jobs = list(self.jobs_collection.find({
+            "created_at": {"$lt": cutoff_date}
+        }))
+        
+        old_job_ids = [job["job_id"] for job in old_jobs]
+        
+        # Delete old jobs
+        deleted_jobs = self.jobs_collection.delete_many({
+            "created_at": {"$lt": cutoff_date}
+        })
+        
+        # Delete associated candidates
+        deleted_candidates = 0
+        if old_job_ids:
+            deleted_candidates = self.candidates_collection.delete_many({
+                "job_id": {"$in": old_job_ids}
+            }).deleted_count
+        
+        return {
+            "deleted_jobs_count": deleted_jobs.deleted_count,
+            "deleted_candidates_count": deleted_candidates,
+            "cutoff_date": cutoff_date.isoformat()
+        }

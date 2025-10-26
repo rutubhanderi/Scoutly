@@ -16,7 +16,7 @@ class QueryArchitect:
         if platform == 'linkedin':
             site_directive = 'site:linkedin.com/in/'
             system_prompt = """You are an expert recruitment assistant. Your task is to analyze a job description for a LinkedIn search and extract key information in a clean JSON format.
-            Infer seniority from experience requirements. Focus only on the most critical professional skills and the job title. If no location is mentioned, default to Pune, Maharashtra."""
+            Infer seniority from experience requirements. Focus only on the most critical professional skills and the job title. If no location is mentioned, default to India."""
         elif platform == 'github':
             site_directive = 'site:github.com'
             system_prompt = """You are an expert recruitment assistant. Your task is to analyze a job description for a GitHub user search and extract key information in a clean JSON format.

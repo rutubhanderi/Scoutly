@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import Button from '../ui/Button';
 import { Card, CardContent } from '../ui/Card';
 import toast from 'react-hot-toast';
+import api from '../../api'; // Use the central API service
 
-const SavedCandidateEditModal = ({ open, onClose, initial, fastapiUrl, nodeApiUrl, onUpdated, onResumeUploaded }) => {
+const SavedCandidateEditModal = ({ open, onClose, initial, onUpdated, onResumeUploaded }) => {
   const [form, setForm] = useState({ notes: '', contacted: false, review: '', email: '', linkedin: '' });
   const [noteInput, setNoteInput] = useState('');
   const [uploadFile, setUploadFile] = useState(null);
@@ -24,7 +25,6 @@ const SavedCandidateEditModal = ({ open, onClose, initial, fastapiUrl, nodeApiUr
     }
   }, [open, initial]);
 
-  // Lock background scroll while modal open
   useEffect(() => {
     if (!open) return;
     const original = document.body.style.overflow;
@@ -48,12 +48,7 @@ const SavedCandidateEditModal = ({ open, onClose, initial, fastapiUrl, nodeApiUr
         email: form.email || undefined,
         linkedin: form.linkedin || undefined,
       };
-      const res = await fetch(`${fastapiUrl}/saved-candidates`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error('Update failed');
+      await api.put('/api/fastapi/saved-candidates', payload);
       toast.success('Saved candidate updated');
       onUpdated?.();
       onClose();
@@ -72,17 +67,15 @@ const SavedCandidateEditModal = ({ open, onClose, initial, fastapiUrl, nodeApiUr
     }
     try {
       setUploading(true);
-      const token = localStorage.getItem('token');
       const formData = new FormData();
       formData.append('file', uploadFile);
       formData.append('job_id', initial.job_id);
       formData.append('candidate_link', initial.candidate_link);
-      const res = await fetch(`${nodeApiUrl}/api/saved-candidates/resume`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
+      
+      // This route is a special case handled by a specific proxy in app.js
+      await api.post('/api/fastapi/api/saved-candidates/resume', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-      if (!res.ok) throw new Error('Upload failed');
       toast.success('Resume uploaded');
       onResumeUploaded?.();
       setUploadFile(null);
@@ -104,7 +97,8 @@ const SavedCandidateEditModal = ({ open, onClose, initial, fastapiUrl, nodeApiUr
               <h3 className="text-lg font-semibold text-white">Edit Saved Candidate</h3>
               <button onClick={onClose} className="text-gray-400 hover:text-gray-200">✕</button>
             </div>
-
+            
+            {/* The rest of the JSX for the form remains exactly the same... */}
             <div>
               <label className="block text-sm text-gray-300 mb-1">Notes (bullet points)</label>
               <div className="flex gap-2">
@@ -118,10 +112,7 @@ const SavedCandidateEditModal = ({ open, onClose, initial, fastapiUrl, nodeApiUr
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       if (noteInput.trim()) {
-                        const current = String(form.notes || '')
-                          .split(/\r?\n|•/)
-                          .map(s => s.trim())
-                          .filter(Boolean);
+                        const current = String(form.notes || '').split(/\r?\n|•/).map(s => s.trim()).filter(Boolean);
                         const next = [...current, noteInput.trim()].slice(0, 20);
                         setForm({ ...form, notes: next.join('\n') });
                         setNoteInput('');
@@ -132,10 +123,7 @@ const SavedCandidateEditModal = ({ open, onClose, initial, fastapiUrl, nodeApiUr
                 <Button
                   onClick={() => {
                     if (!noteInput.trim()) return;
-                    const current = String(form.notes || '')
-                      .split(/\r?\n|•/)
-                      .map(s => s.trim())
-                      .filter(Boolean);
+                    const current = String(form.notes || '').split(/\r?\n|•/).map(s => s.trim()).filter(Boolean);
                     const next = [...current, noteInput.trim()].slice(0, 20);
                     setForm({ ...form, notes: next.join('\n') });
                     setNoteInput('');
@@ -146,22 +134,14 @@ const SavedCandidateEditModal = ({ open, onClose, initial, fastapiUrl, nodeApiUr
                 </Button>
               </div>
               <ul className="mt-3 list-disc list-inside space-y-1 text-sm text-gray-300">
-                {String(form.notes || '')
-                  .split(/\r?\n|•/)
-                  .map(s => s.trim())
-                  .filter(Boolean)
-                  .map((note, idx) => (
+                {String(form.notes || '').split(/\r?\n|•/).map(s => s.trim()).filter(Boolean).map((note, idx) => (
                     <li key={idx} className="flex items-start gap-2">
                       <span className="flex-1 break-words">{note}</span>
                       <button
                         type="button"
                         className="text-xs text-red-400 hover:text-red-300"
                         onClick={() => {
-                          const remaining = String(form.notes || '')
-                            .split(/\r?\n|•/)
-                            .map(s => s.trim())
-                            .filter(Boolean)
-                            .filter((_, i) => i !== idx);
+                          const remaining = String(form.notes || '').split(/\r?\n|•/).map(s => s.trim()).filter(Boolean).filter((_, i) => i !== idx);
                           setForm({ ...form, notes: remaining.join('\n') });
                         }}
                       >
@@ -197,21 +177,11 @@ const SavedCandidateEditModal = ({ open, onClose, initial, fastapiUrl, nodeApiUr
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-gray-300 mb-1">Email</label>
-                <input
-                  type="email"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-white"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                />
+                <input type="email" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-white" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
               </div>
               <div>
                 <label className="block text-sm text-gray-300 mb-1">LinkedIn</label>
-                <input
-                  type="url"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-white"
-                  value={form.linkedin}
-                  onChange={(e) => setForm({ ...form, linkedin: e.target.value })}
-                />
+                <input type="url" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-white" value={form.linkedin} onChange={(e) => setForm({ ...form, linkedin: e.target.value })} />
               </div>
             </div>
 

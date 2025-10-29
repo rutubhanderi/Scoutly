@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+
+import React,{useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast, { Toaster } from 'react-hot-toast';
 import Sidebar from '../components/layout/Sidebar';
@@ -10,7 +11,7 @@ import Pagination from '../components/ui/Pagination';
 import Button from '../components/ui/Button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Upload, FileText, Search, Sparkles } from 'lucide-react';
-import axios from 'axios';
+import api from '../api'; // Use the central API service
 import { useAuth } from '../context/AuthContext';
 
 const Dashboard = () => {
@@ -31,7 +32,7 @@ const Dashboard = () => {
   const [editablePrompts, setEditablePrompts] = useState({ linkedin: '', github: '' });
   const [currentJobId, setCurrentJobId] = useState(null);
   const [savedLinks, setSavedLinks] = useState(new Set());
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [profileForm, setProfileForm] = useState({ name: '', email: '' });
   const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [savingProfile, setSavingProfile] = useState(false);
@@ -43,29 +44,26 @@ const Dashboard = () => {
   const [historyIndex, setHistoryIndex] = useState(0);
   
   const CANDIDATES_PER_PAGE = 6;
-  const API_URL = 'http://localhost:5000';
-  const FASTAPI_URL = 'http://127.0.0.1:8000';
 
   // Load search history
   const loadSearchHistory = async () => {
     try {
-      const response = await fetch(`${FASTAPI_URL}/sourcing-jobs`);
-      const data = await response.json();
-      const jobs = (data.jobs || [])
+      const response = await api.get('/api/fastapi/sourcing-jobs');
+      const jobs = (response.data.jobs || [])
         .filter((j) => j.status === 'completed' && (j.candidate_count || 0) > 0)
         .slice(0, 10);
       setSearchHistory(jobs);
     } catch (error) {
       console.error('Error loading history:', error);
+      toast.error('Could not load search history.');
     }
   };
 
   const loadSavedForJob = async (jobId) => {
     if (!jobId) return;
     try {
-      const res = await fetch(`${FASTAPI_URL}/saved-candidates?job_id=${encodeURIComponent(jobId)}`);
-      const data = await res.json();
-      const setLinks = new Set((data.items || []).map(i => i.candidate_link));
+      const res = await api.get(`/api/fastapi/saved-candidates?job_id=${encodeURIComponent(jobId)}`);
+      const setLinks = new Set((res.data.items || []).map(i => i.candidate_link));
       setSavedLinks(setLinks);
     } catch (e) {
       console.error('Failed to load saved for job', e);
@@ -99,25 +97,18 @@ const Dashboard = () => {
       toast.error('Please provide a job description or upload a file');
       return;
     }
-
     setIsLoading(true);
     setLoadingMessage('Processing job description...');
-
     try {
-      const token = localStorage.getItem('token');
       const formData = new FormData();
-
       if (file) {
         formData.append('file', file);
-      } else if (jobDescription) {
+      } else {
         formData.append('jd_text', jobDescription);
       }
 
-      const response = await axios.post(`${API_URL}/api/process-jd`, formData, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data',
-        },
+      const response = await api.post('/api/fastapi/process-jd', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
 
       if (response.data.success) {
@@ -133,11 +124,12 @@ const Dashboard = () => {
         setShowPrompts(true);
         toast.success('Job description processed successfully!');
       } else {
-        throw new Error('Failed to process job description');
+        throw new Error(response.data.error || 'Failed to process job description');
       }
     } catch (error) {
       console.error('Error processing JD:', error);
-      toast.error(error.response?.data?.error || 'Failed to process job description');
+      const errorMessage = error.response?.data?.detail || error.response?.data?.error || 'Failed to process job description';
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
@@ -149,42 +141,30 @@ const Dashboard = () => {
       toast.error('Please provide at least one prompt (LinkedIn or GitHub)');
       return;
     }
-
     setIsLoading(true);
     setResults(null);
     setLoadingMessage('Creating sourcing job...');
     setShowPrompts(false);
 
     try {
-      const response = await fetch(`${FASTAPI_URL}/sourcing-jobs`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          linkedin_prompt: editablePrompts.linkedin,
-          github_prompt: editablePrompts.github,
-          structured_jd: structuredJD,
-        }),
+      const response = await api.post('/api/fastapi/sourcing-jobs', {
+        linkedin_prompt: editablePrompts.linkedin,
+        github_prompt: editablePrompts.github,
+        structured_jd: structuredJD,
       });
 
-      if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
-
-      const jobData = await response.json();
-      const { job_id } = jobData;
-
-      if (job_id) {
-        setCurrentJobId(job_id);
-        loadSavedForJob(job_id);
-        pollForResults(job_id);
+      const jobData = response.data;
+      if (jobData && jobData.job_id) {
+        setCurrentJobId(jobData.job_id);
+        loadSavedForJob(jobData.job_id);
+        pollForResults(jobData.job_id);
         toast.success('Job created! Searching for candidates...');
       } else {
         throw new Error("Did not receive a job_id from the server.");
       }
     } catch (error) {
       console.error('Error creating sourcing job:', error);
-      toast.error('Failed to create the sourcing job');
+      toast.error(error.response?.data?.detail || 'Failed to create the sourcing job');
       setIsLoading(false);
     }
   };
@@ -192,8 +172,8 @@ const Dashboard = () => {
   const pollForResults = (jobId) => {
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`${FASTAPI_URL}/sourcing-jobs/${jobId}/results`);
-        const data = await response.json();
+        const response = await api.get(`/api/fastapi/sourcing-jobs/${jobId}/results`);
+        const data = response.data;
 
         if (data.candidates && data.candidates.length > 0) {
           setResults(data);
@@ -224,18 +204,14 @@ const Dashboard = () => {
 
   const handleSaveCandidate = async (jobId, candidate) => {
     try {
-      await fetch(`${FASTAPI_URL}/saved-candidates`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          job_id: jobId,
-          candidate_link: candidate.link,
-          name: candidate.name,
-          match_score: candidate.match_score,
-          reasoning: candidate.reasoning,
-        }),
+      await api.post('/api/fastapi/saved-candidates', {
+        job_id: jobId,
+        candidate_link: candidate.link,
+        name: candidate.name,
+        match_score: candidate.match_score,
+        reasoning: candidate.reasoning,
       });
-      setSavedLinks(prev => new Set([...prev, candidate.link]));
+      setSavedLinks(prev => new Set(prev).add(candidate.link));
       toast.success('Candidate saved!');
     } catch (e) {
       console.error('Save failed', e);
@@ -252,9 +228,8 @@ const Dashboard = () => {
 
     try {
       const jobId = searchHistory[index].job_id;
-      const response = await fetch(`${FASTAPI_URL}/sourcing-jobs/${jobId}/results`);
-      const data = await response.json();
-      setResults(data);
+      const response = await api.get(`/api/fastapi/sourcing-jobs/${jobId}/results`);
+      setResults(response.data);
       setCurrentJobId(jobId);
       loadSavedForJob(jobId);
       setCurrentPage(1);
@@ -273,6 +248,42 @@ const Dashboard = () => {
       loadPreviousSearch(historyIndex);
     }
   }, [historyIndex, activeTab]);
+  
+  const handleUpdateProfile = async () => {
+    try {
+      setSavingProfile(true);
+      await api.put('/api/auth/profile', profileForm);
+      await refreshUser();
+      toast.success('Profile updated');
+    } catch (e) {
+      const msg = e.response?.data?.message || 'Failed to update profile';
+      toast.error(msg);
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!pwdForm.newPassword || pwdForm.newPassword !== pwdForm.confirm) {
+      toast.error('Passwords do not match');
+      return;
+    }
+    try {
+      setSavingPwd(true);
+      await api.post('/api/auth/change-password', {
+        currentPassword: pwdForm.currentPassword,
+        newPassword: pwdForm.newPassword,
+      });
+      toast.success('Password changed successfully');
+      setPwdForm({ currentPassword: '', newPassword: '', confirm: '' });
+    } catch (e) {
+      const msg = e.response?.data?.message || 'Failed to change password';
+      toast.error(msg);
+    } finally {
+      setSavingPwd(false);
+    }
+  };
+
 
   // Pagination logic
   const paginatedCandidates = results?.candidates?.slice(
@@ -335,7 +346,6 @@ const Dashboard = () => {
       <div className="flex-1 flex flex-col min-w-0">
         <Header darkMode={darkMode} setDarkMode={setDarkMode} onProfileClick={() => setActiveSection('settings')} />
 
-        {/* Tabs for Search Section */}
         {activeSection === 'search' && (
           <div className="bg-gray-900/50 border-b border-gray-800">
             <div className="px-6 md:px-8">
@@ -344,22 +354,14 @@ const Dashboard = () => {
                   <motion.button
                     key={tab}
                     whileHover={{ y: -2 }}
-                    onClick={() => {
-                      setActiveTab(tab);
-                      setCurrentPage(1);
-                    }}
+                    onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
                     className={`px-6 md:px-8 py-3.5 text-sm md:text-[15px] font-semibold transition-all relative ${
-                      activeTab === tab
-                        ? 'text-blue-400'
-                        : 'text-gray-400 hover:text-gray-300'
+                      activeTab === tab ? 'text-blue-400' : 'text-gray-400 hover:text-gray-300'
                     }`}
                   >
                     {tab === 'new' ? 'New Search' : 'Search History'}
                     {activeTab === tab && (
-                      <motion.div
-                        layoutId="activeTab"
-                        className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-600 to-indigo-600"
-                      />
+                      <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-600 to-indigo-600" />
                     )}
                   </motion.button>
                 ))}
@@ -368,45 +370,21 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Main Content */}
         <main className="flex-1 p-6 md:p-8 lg:p-10 overflow-auto">
           <AnimatePresence mode="wait">
-            {/* New Search Tab */}
             {activeSection === 'search' && activeTab === 'new' && (
-              <motion.div
-                key="new-search"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="space-y-8 md:space-y-10"
-              >
-                {/* JD Input */}
+              <motion.div key="new-search" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8 md:space-y-10">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-3 text-xl md:text-2xl">
-                      <Sparkles className="w-6 h-6 md:w-7 md:h-7 text-blue-500" />
-                      Start New Search
-                    </CardTitle>
-                    <CardDescription>
-                      Paste a job description or upload a file to begin
-                    </CardDescription>
+                    <CardTitle className="flex items-center gap-3 text-xl md:text-2xl"><Sparkles className="w-6 h-6 md:w-7 md:h-7 text-blue-500" />Start New Search</CardTitle>
+                    <CardDescription>Paste a job description or upload a file to begin</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-col lg:flex-row gap-8 md:gap-10">
                       <div className="flex-1">
-                        <label className="block text-sm font-semibold text-gray-300 mb-2">
-                          Job Description
-                        </label>
-                        <textarea
-                          className="w-full bg-gray-800 border border-gray-700 rounded-xl p-4 md:p-5 text-white placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-                          placeholder="Paste a Job Description here..."
-                          value={jobDescription}
-                          onChange={(e) => setJobDescription(e.target.value)}
-                          disabled={!!file}
-                          rows={8}
-                        />
+                        <label className="block text-sm font-semibold text-gray-300 mb-2">Job Description</label>
+                        <textarea className="w-full bg-gray-800 border border-gray-700 rounded-xl p-4 md:p-5 text-white placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 transition" placeholder="Paste a Job Description here..." value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} disabled={!!file} rows={8} />
                       </div>
-                      
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col items-center gap-3 p-6 md:p-7 border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/50 hover:border-blue-500/50 transition-colors">
                           <span className="text-sm font-semibold text-gray-400">or</span>
@@ -416,406 +394,107 @@ const Dashboard = () => {
                               <span className="text-gray-300 font-medium">Upload File</span>
                             </div>
                           </label>
-                          <input
-                            id="file-upload"
-                            type="file"
-                            accept=".txt,.md,.pdf,.jpg,.jpeg,.png"
-                            className="hidden"
-                            onChange={handleFileChange}
-                          />
+                          <input id="file-upload" type="file" accept=".txt,.md,.pdf,.jpg,.jpeg,.png" className="hidden" onChange={handleFileChange} />
                           {file && (
-                            <div className="text-center">
-                              <p className="text-sm font-medium text-gray-300">{file.name}</p>
-                              <button
-                                onClick={() => setFile(null)}
-                                className="text-xs text-red-400 hover:text-red-300 mt-1"
-                              >
-                                Remove
-                              </button>
-                            </div>
+                            <div className="text-center"><p className="text-sm font-medium text-gray-300">{file.name}</p><button onClick={() => setFile(null)} className="text-xs text-red-400 hover:text-red-300 mt-1">Remove</button></div>
                           )}
                         </div>
                       </div>
                     </div>
-
                     <div className="mt-6">
-                      <Button
-                        onClick={processJD}
-                        disabled={(!jobDescription && !file) || isLoading}
-                        loading={isLoading}
-                        size="lg"
-                      >
-                        <FileText className="w-5 h-5 mr-2" />
-                        Process Job Description
-                      </Button>
+                      <Button onClick={processJD} disabled={(!jobDescription && !file) || isLoading} loading={isLoading && loadingMessage.includes('Processing')} size="lg"><FileText className="w-5 h-5 mr-2" />Process Job Description</Button>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Structured JD Display */}
                 {structuredJD && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-xl md:text-2xl">Job Details Extracted</CardTitle>
-                    </CardHeader>
-                    <CardContent>
+                  <Card><CardHeader><CardTitle className="text-xl md:text-2xl">Job Details Extracted</CardTitle></CardHeader><CardContent>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
                         {Object.entries(structuredJD).map(([key, value]) => {
                           if (!value || (Array.isArray(value) && value.length === 0)) return null;
                           return (
                             <div key={key} className="p-4 md:p-5 bg-gray-800/50 rounded-xl border border-gray-700/80">
-                              <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
-                                {key.replace(/_/g, ' ')}
-                              </p>
-                              {Array.isArray(value) ? (
-                                <div className="flex flex-wrap gap-2 mt-2">
-                                  {value.slice(0, 6).map((item, idx) => (
-                                    <span key={idx} className="px-3 py-1 bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[13px] rounded-full">
-                                      {item}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-white font-semibold">{value}</p>
-                              )}
+                              <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">{key.replace(/_/g, ' ')}</p>
+                              {Array.isArray(value) ? (<div className="flex flex-wrap gap-2 mt-2">{value.slice(0, 6).map((item, idx) => (<span key={idx} className="px-3 py-1 bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[13px] rounded-full">{item}</span>))}</div>) : (<p className="text-white font-semibold">{value}</p>)}
                             </div>
                           );
                         })}
                       </div>
-                    </CardContent>
-                  </Card>
+                  </CardContent></Card>
                 )}
 
-                {/* Prompts Section */}
                 {showPrompts && generatedPrompts && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-xl md:text-2xl">Review & Edit Search Prompts</CardTitle>
-                      <CardDescription>Customize the search queries before starting</CardDescription>
-                    </CardHeader>
-                    <CardContent>
+                  <Card><CardHeader><CardTitle className="text-xl md:text-2xl">Review & Edit Search Prompts</CardTitle><CardDescription>Customize the search queries before starting</CardDescription></CardHeader><CardContent>
                       <div className="space-y-5">
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-300 mb-2">
-                            LinkedIn Search Prompt
-                          </label>
-                          <textarea
-                            className="w-full bg-gray-800 border border-gray-700 rounded-xl p-4 text-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={editablePrompts.linkedin}
-                            onChange={(e) => setEditablePrompts({ ...editablePrompts, linkedin: e.target.value })}
-                            rows={3}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-300 mb-2">
-                            GitHub Search Prompt
-                          </label>
-                          <textarea
-                            className="w-full bg-gray-800 border border-gray-700 rounded-xl p-4 text-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={editablePrompts.github}
-                            onChange={(e) => setEditablePrompts({ ...editablePrompts, github: e.target.value })}
-                            rows={3}
-                          />
-                        </div>
+                        <div><label className="block text-sm font-semibold text-gray-300 mb-2">LinkedIn Search Prompt</label><textarea className="w-full bg-gray-800 border border-gray-700 rounded-xl p-4 text-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" value={editablePrompts.linkedin} onChange={(e) => setEditablePrompts({ ...editablePrompts, linkedin: e.target.value })} rows={3} /></div>
+                        <div><label className="block text-sm font-semibold text-gray-300 mb-2">GitHub Search Prompt</label><textarea className="w-full bg-gray-800 border border-gray-700 rounded-xl p-4 text-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" value={editablePrompts.github} onChange={(e) => setEditablePrompts({ ...editablePrompts, github: e.target.value })} rows={3} /></div>
                       </div>
-
-                      <div className="mt-6 flex gap-4">
-                        <Button
-                          onClick={handleStartSearch}
-                          disabled={isLoading}
-                          loading={isLoading}
-                          variant="success"
-                          size="lg"
-                        >
-                          <Search className="w-5 h-5 mr-2" />
-                          Start Search
-                        </Button>
-                        <Button
-                          onClick={() => setShowPrompts(false)}
-                          variant="ghost"
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                      <div className="mt-6 flex gap-4"><Button onClick={handleStartSearch} disabled={isLoading} loading={isLoading && !loadingMessage.includes('Processing')} variant="success" size="lg"><Search className="w-5 h-5 mr-2" />Start Search</Button><Button onClick={() => setShowPrompts(false)} variant="ghost">Cancel</Button></div>
+                  </CardContent></Card>
                 )}
 
-                {/* Loading State */}
-                {isLoading && (
-                  <Card>
-                    <CardContent className="py-12 md:py-16">
-                      <LoadingSpinner message={loadingMessage} />
-                    </CardContent>
-                  </Card>
-                )}
+                {isLoading && (<Card><CardContent className="py-12 md:py-16"><LoadingSpinner message={loadingMessage} /></CardContent></Card>)}
 
-                {/* Results */}
                 {!isLoading && results && results.candidates && results.candidates.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-xl md:text-2xl">Search Results</CardTitle>
-                        <span className="text-sm md:text-[13px] text-gray-400">
-                          {results.candidate_count || 0} candidates found
-                        </span>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid gap-8 md:gap-10 md:grid-cols-2 mb-10">
-                        {paginatedCandidates.map((candidate, index) => (
-                          <CandidateCard
-                            key={index}
-                            candidate={candidate}
-                            index={index}
-                            isSaved={savedLinks.has(candidate.link)}
-                            onSave={() => handleSaveCandidate(currentJobId, candidate)}
-                          />
-                        ))}
-                      </div>
-                      {totalPages > 1 && (
-                        <div className="mt-10">
-                          <Pagination
-                            currentPage={currentPage}
-                            totalPages={totalPages}
-                            onPageChange={setCurrentPage}
-                          />
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
+                  <Card><CardHeader><div className="flex items-center justify-between"><CardTitle className="text-xl md:text-2xl">Search Results</CardTitle><span className="text-sm md:text-[13px] text-gray-400">{results.candidate_count || 0} candidates found</span></div></CardHeader><CardContent>
+                      <div className="grid gap-8 md:gap-10 md:grid-cols-2 mb-10">{paginatedCandidates.map((candidate, index) => (<CandidateCard key={index} candidate={candidate} index={index} isSaved={savedLinks.has(candidate.link)} onSave={() => handleSaveCandidate(currentJobId, candidate)} />))}</div>
+                      {totalPages > 1 && (<div className="mt-10"><Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} /></div>)}
+                  </CardContent></Card>
                 )}
               </motion.div>
             )}
 
-            {/* Old Searches Tab */}
             {activeSection === 'search' && activeTab === 'old' && (
-              <motion.div
-                key="old-searches"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-              >
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-xl md:text-2xl">Search History</CardTitle>
-                      <div className="text-sm md:text-[13px] text-gray-400">
-                        {searchHistory.length > 0 ? `${historyIndex + 1} of ${searchHistory.length}` : 'No history'}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {searchHistory.length > 0 && (
-                      <div className="mb-6 md:mb-8">
-                        <Pagination
-                          currentPage={historyIndex + 1}
-                          totalPages={searchHistory.length}
-                          onPageChange={(page) => setHistoryIndex(page - 1)}
-                        />
-                      </div>
-                    )}
-
-                    {isLoading ? (
-                      <LoadingSpinner message={loadingMessage} />
-                    ) : results ? (
+              <motion.div key="old-searches" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+                <Card><CardHeader><div className="flex items-center justify-between"><CardTitle className="text-xl md:text-2xl">Search History</CardTitle><div className="text-sm md:text-[13px] text-gray-400">{searchHistory.length > 0 ? `${historyIndex + 1} of ${searchHistory.length}` : 'No history'}</div></div></CardHeader><CardContent>
+                    {searchHistory.length > 0 && (<div className="mb-6 md:mb-8"><Pagination currentPage={historyIndex + 1} totalPages={searchHistory.length} onPageChange={(page) => setHistoryIndex(page - 1)} /></div>)}
+                    {isLoading ? (<LoadingSpinner message={loadingMessage} />) : results ? (
                       <>
-                        {/* JD Summary */}
                         {(() => {
                           const jd = results.job_details?.structured_jd || deriveStructuredJD(results.job_details);
                           if (!jd) return null;
                           return (
-                            <Card className="mb-6 md:mb-8">
-                              <CardHeader>
-                                <CardTitle className="text-xl md:text-2xl">Job Summary</CardTitle>
-                              </CardHeader>
-                              <CardContent>
+                            <Card className="mb-6 md:mb-8"><CardHeader><CardTitle className="text-xl md:text-2xl">Job Summary</CardTitle></CardHeader><CardContent>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
                                   {Object.entries(jd).map(([key, value]) => {
                                     if (!value || (Array.isArray(value) && value.length === 0)) return null;
-                                    return (
-                                      <div key={key} className="p-4 md:p-5 bg-gray-800/50 rounded-xl border border-gray-700/80">
-                                        <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">{key.replace(/_/g, ' ')}</p>
-                                        {Array.isArray(value) ? (
-                                          <div className="flex flex-wrap gap-2 mt-2">
-                                            {value.slice(0, 6).map((item, idx) => (
-                                              <span key={idx} className="px-3 py-1 bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[13px] rounded-full">{item}</span>
-                                            ))}
-                                          </div>
-                                        ) : (
-                                          <p className="text-white font-semibold">{value}</p>
-                                        )}
-                                      </div>
-                                    );
+                                    return (<div key={key} className="p-4 md:p-5 bg-gray-800/50 rounded-xl border border-gray-700/80"><p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">{key.replace(/_/g, ' ')}</p>{Array.isArray(value) ? (<div className="flex flex-wrap gap-2 mt-2">{value.slice(0, 6).map((item, idx) => (<span key={idx} className="px-3 py-1 bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[13px] rounded-full">{item}</span>))}</div>) : (<p className="text-white font-semibold">{value}</p>)}</div>);
                                   })}
                                 </div>
-                              </CardContent>
-                            </Card>
+                            </CardContent></Card>
                           );
                         })()}
-
-                        {/* Candidates */}
-{results.candidates && results.candidates.length > 0 ? (
-  <>
-    <div className="grid gap-6 md:grid-cols-2 mb-8">
-      {paginatedCandidates.map((candidate, index) => (
-        <CandidateCard
-          key={index}
-          candidate={candidate}
-          index={index}
-          isSaved={savedLinks.has(candidate.link)}
-          onSave={() => handleSaveCandidate(currentJobId, candidate)}
-        />
-      ))}
-    </div>
-
-    {totalPages > 1 && (
-      <Pagination
-        currentPage={currentPage}
-        totalPages={totalPages}
-        onPageChange={setCurrentPage}
-      />
-    )}
-  </>
-) : (
-  <div className="text-center py-12 text-gray-400">
-    No candidates stored for this search.
-  </div>
-)}
-
+                        {results.candidates && results.candidates.length > 0 ? (
+                          <>
+                            <div className="grid gap-6 md:grid-cols-2 mb-8">{paginatedCandidates.map((candidate, index) => (<CandidateCard key={index} candidate={candidate} index={index} isSaved={savedLinks.has(candidate.link)} onSave={() => handleSaveCandidate(currentJobId, candidate)} />))}</div>
+                            {totalPages > 1 && <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />}
+                          </>
+                        ) : (<div className="text-center py-12 text-gray-400">No candidates stored for this search.</div>)}
                       </>
-                    ) : (
-                      <div className="text-center py-12 md:py-16 text-gray-400">No search history available</div>
-                    )}
-                  </CardContent>
-                </Card>
+                    ) : (<div className="text-center py-12 md:py-16 text-gray-400">No search history available</div>)}
+                  </CardContent></Card>
               </motion.div>
             )}
 
-            {/* Saved Candidates Section */}
-            {activeSection === 'saved' && (
-              <SavedCandidatesList fastapiUrl={FASTAPI_URL} nodeApiUrl={API_URL} />
-            )}
-
-            {/* Settings Section */}
+            {activeSection === 'saved' && <SavedCandidatesList />}
+            
             {activeSection === 'settings' && (
-              <motion.div
-                key="settings"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="space-y-8"
-              >
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-xl md:text-2xl">Profile</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+              <motion.div key="settings" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
+                <Card><CardHeader><CardTitle className="text-xl md:text-2xl">Profile</CardTitle></CardHeader><CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm text-gray-300 mb-1">Name</label>
-                        <input
-                          type="text"
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white"
-                          value={profileForm.name}
-                          onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-300 mb-1">Email</label>
-                        <input
-                          type="email"
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white"
-                          value={profileForm.email}
-                          onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
-                        />
-                      </div>
+                      <div><label className="block text-sm text-gray-300 mb-1">Name</label><input type="text" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white" value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} /></div>
+                      <div><label className="block text-sm text-gray-300 mb-1">Email</label><input type="email" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white" value={profileForm.email} onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })} /></div>
                     </div>
-                    <div className="mt-6 flex justify-end">
-                      <Button
-                        onClick={async () => {
-                          try {
-                            setSavingProfile(true);
-                            await axios.put('/api/auth/profile', profileForm);
-                            toast.success('Profile updated');
-                          } catch (e) {
-                            const msg = e.response?.data?.message || 'Failed to update profile';
-                            toast.error(msg);
-                          } finally {
-                            setSavingProfile(false);
-                          }
-                        }}
-                        loading={savingProfile}
-                      >
-                        Save Changes
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-xl md:text-2xl">Change Password</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                    <div className="mt-6 flex justify-end"><Button onClick={handleUpdateProfile} loading={savingProfile}>Save Changes</Button></div>
+                </CardContent></Card>
+                <Card><CardHeader><CardTitle className="text-xl md:text-2xl">Change Password</CardTitle></CardHeader><CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div>
-                        <label className="block text-sm text-gray-300 mb-1">Current Password</label>
-                        <input
-                          type="password"
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white"
-                          value={pwdForm.currentPassword}
-                          onChange={(e) => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-300 mb-1">New Password</label>
-                        <input
-                          type="password"
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white"
-                          value={pwdForm.newPassword}
-                          onChange={(e) => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-300 mb-1">Confirm New Password</label>
-                        <input
-                          type="password"
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white"
-                          value={pwdForm.confirm}
-                          onChange={(e) => setPwdForm({ ...pwdForm, confirm: e.target.value })}
-                        />
-                      </div>
+                      <div><label className="block text-sm text-gray-300 mb-1">Current Password</label><input type="password" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white" value={pwdForm.currentPassword} onChange={(e) => setPwdForm({ ...pwdForm, currentPassword: e.target.value })} /></div>
+                      <div><label className="block text-sm text-gray-300 mb-1">New Password</label><input type="password" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white" value={pwdForm.newPassword} onChange={(e) => setPwdForm({ ...pwdForm, newPassword: e.target.value })} /></div>
+                      <div><label className="block text-sm text-gray-300 mb-1">Confirm New Password</label><input type="password" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white" value={pwdForm.confirm} onChange={(e) => setPwdForm({ ...pwdForm, confirm: e.target.value })} /></div>
                     </div>
-                    <div className="mt-6 flex justify-end">
-                      <Button
-                        onClick={async () => {
-                          if (!pwdForm.newPassword || pwdForm.newPassword !== pwdForm.confirm) {
-                            toast.error('Passwords do not match');
-                            return;
-                          }
-                          try {
-                            setSavingPwd(true);
-                            await axios.post('/api/auth/change-password', {
-                              currentPassword: pwdForm.currentPassword,
-                              newPassword: pwdForm.newPassword,
-                            });
-                            toast.success('Password changed successfully');
-                            setPwdForm({ currentPassword: '', newPassword: '', confirm: '' });
-                          } catch (e) {
-                            const msg = e.response?.data?.message || 'Failed to change password';
-                            toast.error(msg);
-                          } finally {
-                            setSavingPwd(false);
-                          }
-                        }}
-                        loading={savingPwd}
-                      >
-                        Update Password
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                    <div className="mt-6 flex justify-end"><Button onClick={handleUpdatePassword} loading={savingPwd}>Update Password</Button></div>
+                </CardContent></Card>
               </motion.div>
             )}
           </AnimatePresence>

@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api'; // Import the configured axios instance
 
 const AuthContext = createContext();
 
@@ -11,35 +11,18 @@ export const useAuth = () => {
   return context;
 };
 
-// Configure axios defaults
-axios.defaults.baseURL = 'http://localhost:5000';
-
-// Add token to requests if available
-axios.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Check if user is logged in on app start
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('token');
       if (token) {
         try {
-          const response = await axios.get('/api/auth/me');
+          // The token is already attached by the api.js interceptor
+          const response = await api.get('/api/auth/me');
           setUser(response.data.user);
         } catch (error) {
           localStorage.removeItem('token');
@@ -55,7 +38,7 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     try {
       setError('');
-      const response = await axios.post('/api/auth/register', userData);
+      const response = await api.post('/api/auth/register', userData);
       const { token, user } = response.data;
       
       localStorage.setItem('token', token);
@@ -71,7 +54,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       setError('');
-      const response = await axios.post('/api/auth/login', credentials);
+      const response = await api.post('/api/auth/login', credentials);
       const { token, user } = response.data;
       
       localStorage.setItem('token', token);
@@ -92,7 +75,7 @@ export const AuthProvider = ({ children }) => {
 
   const refreshUser = async () => {
     try {
-      const response = await axios.get('/api/auth/me');
+      const response = await api.get('/api/auth/me');
       setUser(response.data.user);
       return { success: true };
     } catch (e) {
@@ -113,7 +96,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 };

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, BackgroundTasks, HTTPException, File, UploadFile, Form
+from fastapi import FastAPI, BackgroundTasks, HTTPException, File, UploadFile, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -7,6 +7,7 @@ import shortuuid
 from io import BytesIO
 
 from utils.database import TalentPipelineDB
+from utils.auth import verify_token
 from worker import run_sourcing_task
 from agents.jd_processor import JDProcessor
 
@@ -44,6 +45,9 @@ class JobResponse(BaseModel):
     status: str
     message: str
 
+class StatusUpdateRequest(BaseModel):
+    status: str
+
 db = TalentPipelineDB()
 # Lazy initialization of JDProcessor
 jd_processor = None
@@ -59,15 +63,26 @@ def get_jd_processor():
     return jd_processor
 
 @app.post("/sourcing-jobs", status_code=202, response_model=JobResponse)
-async def create_sourcing_job(request: SourcingRequest, background_tasks: BackgroundTasks):
+async def create_sourcing_job(request: SourcingRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(verify_token)):
+    print("\n[DEBUG] '/sourcing-jobs' endpoint hit.") # <-- ADD THIS
+    
     if not request.linkedin_prompt and not request.github_prompt:
         raise HTTPException(status_code=400, detail="At least one prompt (linkedin_prompt or github_prompt) must be provided.")
 
     job_id = shortuuid.uuid()
-    db.create_job(job_id, request.linkedin_prompt, request.github_prompt)
-    
+    print(f"[DEBUG] Generated job_id: {job_id}") # <-- ADD THIS
+
+    try:
+        db.create_job(job_id, request.linkedin_prompt, request.github_prompt, structured_jd=request.structured_jd if hasattr(request, 'structured_jd') else None)
+        print(f"[DEBUG] Successfully created job in DB for job_id: {job_id}") # <-- ADD THIS
+    except Exception as e:
+        print(f"[DEBUG] ERROR creating job in DB: {e}") # <-- ADD THIS
+        raise HTTPException(status_code=500, detail="Failed to create job in database.")
+
+    print(f"[DEBUG] Adding sourcing task to background for job_id: {job_id}") # <-- ADD THIS
     background_tasks.add_task(run_sourcing_task, job_id, request.linkedin_prompt, request.github_prompt)
     
+    print(f"[DEBUG] Returning 202 response for job_id: {job_id}") # <-- ADD THIS
     return {
         "job_id": job_id,
         "status": "pending",
@@ -79,6 +94,7 @@ async def upload_saved_candidate_resume(
     file: UploadFile = File(...),
     job_id: str = Form(...),
     candidate_link: str = Form(...),
+    current_user: dict = Depends(verify_token)
 ):
     content = await file.read()
     if not content:
@@ -133,7 +149,7 @@ def _derive_job_title(job: Optional[dict]) -> Optional[str]:
     return title if title else None
 
 @app.post("/saved-candidates")
-async def save_candidate(req: SaveCandidateRequest):
+async def save_candidate(req: SaveCandidateRequest, current_user: dict = Depends(verify_token)):
     job = db.get_job(req.job_id)
     title = req.job_title or _derive_job_title(job) or "Untitled Job"
     ok = db.save_candidate_for_job(
@@ -156,22 +172,22 @@ async def save_candidate(req: SaveCandidateRequest):
     return {"success": True}
 
 @app.put("/saved-candidates")
-async def update_saved_candidate(req: SaveCandidateRequest):
+async def update_saved_candidate(req: SaveCandidateRequest, current_user: dict = Depends(verify_token)):
     # Same handler, upsert semantics in DB
     return await save_candidate(req)
 
 @app.get("/saved-candidates")
-async def list_saved_candidates(job_id: Optional[str] = None):
+async def list_saved_candidates(job_id: Optional[str] = None, current_user: dict = Depends(verify_token)):
     docs = db.get_saved_candidates(job_id)
     return {"items": docs, "total": len(docs)}
 
 @app.get("/saved-candidates/grouped")
-async def list_saved_candidates_grouped():
+async def list_saved_candidates_grouped(current_user: dict = Depends(verify_token)):
     grouped = db.get_saved_candidates_grouped()
     return {"groups": grouped, "group_count": len(grouped)}
 
 @app.delete("/saved-candidates")
-async def delete_saved_candidate(job_id: str, candidate_link: str):
+async def delete_saved_candidate(job_id: str, candidate_link: str, current_user: dict = Depends(verify_token)):
     ok = db.delete_saved_candidate(job_id, candidate_link)
     if not ok:
         raise HTTPException(status_code=404, detail="Saved candidate not found")
@@ -228,7 +244,7 @@ def _score_resume_against_jd(resume_text: str, jd_obj: dict | None, jd_fallback_
     return score, reasoning
 
 @app.post("/api/resume/analyze")
-async def analyze_resume(file: UploadFile = File(...), job_id: Optional[str] = Form(None)):
+async def analyze_resume(file: UploadFile = File(...), job_id: Optional[str] = Form(None), current_user: dict = Depends(verify_token)):
     content = await file.read()
     text = ""
     if file.filename.lower().endswith(".pdf"):
@@ -286,13 +302,16 @@ async def get_job_status(job_id: str):
     return job
 
 @app.put("/sourcing-jobs/{job_id}/status")
-async def set_job_status(job_id: str, status: str):
+async def set_job_status(job_id: str, request: StatusUpdateRequest, current_user: dict = Depends(verify_token)):
     job = db.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    
     allowed = {"pending", "running", "completed", "failed", "hired"}
+    status = request.status # Access status from the request body model
     if status not in allowed:
         raise HTTPException(status_code=400, detail=f"Invalid status '{status}'")
+    
     db.update_job_status(job_id, status)
     return {"success": True, "job_id": job_id, "status": status}
 
@@ -380,7 +399,7 @@ async def get_recent_jobs_with_candidates(limit: int = 20):
     return {"jobs": recent_jobs, "total": len(completed_jobs)}
 
 @app.delete("/sourcing-jobs/{job_id}", response_model=DeleteResponse)
-async def delete_sourcing_job(job_id: str):
+async def delete_sourcing_job(job_id: str, current_user: dict = Depends(verify_token)):
     """
     Deletes a specific sourcing job and all of its associated candidates.
     """
@@ -401,7 +420,7 @@ async def delete_sourcing_job(job_id: str):
     }
 
 @app.delete("/sourcing-jobs", response_model=DeleteAllResponse)
-async def delete_all_sourcing_jobs():
+async def delete_all_sourcing_jobs(current_user: dict = Depends(verify_token)):
     """
     Deletes ALL sourcing jobs and ALL candidates. Use with caution.
     """
@@ -415,7 +434,8 @@ async def delete_all_sourcing_jobs():
 @app.post("/process-jd")
 async def process_job_description(
     jd_text: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None)
+    file: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(verify_token)
 ):
     """
     Process a job description from text or file (PDF/image) and generate structured data and prompts.
@@ -503,7 +523,7 @@ async def process_job_description(
 
 
 @app.post("/generate-prompts")
-async def generate_prompts_from_jd(jd_text: str):
+async def generate_prompts_from_jd(jd_text: str, current_user: dict = Depends(verify_token)):
     """
     Generate LinkedIn and GitHub prompts from job description text.
     This endpoint accepts raw text and generates optimized prompts.
@@ -551,7 +571,7 @@ async def generate_prompts_from_jd(jd_text: str):
         raise HTTPException(status_code=500, detail=f"Failed to generate prompts: {str(e)}")
 
 @app.post("/cleanup-old-jobs")
-async def cleanup_old_jobs(days_old: int = 30):
+async def cleanup_old_jobs(days_old: int = 30, current_user: dict = Depends(verify_token)):
     """
     Delete jobs and candidates older than specified days.
     Default: 30 days

@@ -24,3 +24,6 @@ pytesseract
 Pillow
 opencv-python
 pdf2image
+
+# Authentication
+python-jose[cryptography]

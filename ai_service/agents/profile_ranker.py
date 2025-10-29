@@ -28,10 +28,19 @@ class ProfileRanker:
         }
 
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert technical recruiter. Your task is to score a candidate's profile based on a job description.
-            Analyze the candidate's title and snippet. Provide a match score from 1 (poor match) to 100 (perfect match) and a brief, one-sentence justification.
-            Base your score primarily on the skills and experience mentioned in the profile snippet."""),
-            ("human", "Job Prompt: {job_prompt}\n\nCandidate Profile:\nTitle: {candidate_title}\nSnippet: {candidate_snippet}")
+            (
+                "system",
+                """You are an expert technical recruiter. Score how well a candidate matches a job prompt.
+                Return:
+                - match_score: integer 1-100
+                - reasoning: a concise single sentence mentioning the most relevant skills, repos/projects (if provided), and role fit.
+                Consider: candidate title, snippet/bio, platform source, and notable GitHub repositories if available.
+                Do not exceed one sentence in reasoning. Prefer concrete signals (skills, stack, stars, recency)."""
+            ),
+            (
+                "human",
+                "Job Prompt: {job_prompt}\n\nCandidate Profile:\nSource: {candidate_source}\nTitle: {candidate_title}\nSnippet: {candidate_snippet}\nTop Repos: {candidate_repos}"
+            ),
         ])
         
         chain = prompt | self.model.with_structured_output(json_schema)
@@ -39,18 +48,33 @@ class ProfileRanker:
 
         for profile in raw_profiles:
             try:
+                repos_list = profile.get('repos') or []
+                # Summarize repos as "name(stars)" up to 5
+                repos_summary = ", ".join(
+                    [
+                        f"{r.get('name')}({r.get('stars', 0)})" if isinstance(r, dict) else str(r)
+                        for r in repos_list[:5]
+                    ]
+                ) or "None"
+
                 result = chain.invoke({
                     "job_prompt": job_prompt,
+                    "candidate_source": profile.get('source', ''),
                     "candidate_title": profile.get('title', ''),
-                    "candidate_snippet": profile.get('snippet', '')
+                    "candidate_snippet": profile.get('snippet', ''),
+                    "candidate_repos": repos_summary,
                 })
                 profile['match_score'] = result.get('match_score')
                 profile['reasoning'] = result.get('reasoning')
                 print(f"  -> Scored '{profile['name']}': {profile['match_score']}/100")
             except Exception as e:
                 print(f"  -> Could not rank profile for '{profile.get('name', 'Unknown')}': {e}")
-                profile['match_score'] = 0
-                profile['reasoning'] = "Ranking failed due to an error."
+                profile['match_score'] = profile.get('match_score') or 0
+                # Simple fallback reasoning
+                fallback_bits = [b for b in [profile.get('title'), profile.get('source')] if b]
+                if profile.get('repos'):
+                    fallback_bits.append("GitHub repos present")
+                profile['reasoning'] = ", ".join(fallback_bits) or "Insufficient data."
             ranked_profiles.append(profile)
         
         ranked_profiles.sort(key=lambda p: p.get('match_score', 0), reverse=True)

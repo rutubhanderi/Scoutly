@@ -1,0 +1,355 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
+import Button from '../ui/Button';
+import toast from 'react-hot-toast';
+import { Trash2, Pencil } from 'lucide-react';
+import SavedCandidateEditModal from './SavedCandidateEditModal';
+import CandidateDetailModal from './CandidateDetailModal';
+
+const SavedCandidatesList = ({ fastapiUrl, nodeApiUrl }) => {
+  const [groups, setGroups] = useState({});
+  const [selectedByJob, setSelectedByJob] = useState({});
+  const [jobs, setJobs] = useState([]);
+  const [jobIdByTitle, setJobIdByTitle] = useState({});
+  const [candidateInfoCache, setCandidateInfoCache] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedJobTitle, setSelectedJobTitle] = useState(null);
+  const [hiringLink, setHiringLink] = useState(null);
+
+  const loadGroups = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${fastapiUrl}/saved-candidates/grouped`);
+      const data = await res.json();
+      setGroups(data.groups || {});
+      // Load jobs for status and job ids
+      const jobsRes = await fetch(`${fastapiUrl}/sourcing-jobs`);
+      const jobsData = await jobsRes.json();
+      setJobs(jobsData.jobs || []);
+      const map = {};
+      (jobsData.jobs || []).forEach(j => {
+        const title = (j?.structured_jd && j.structured_jd.job_title) || 'Untitled Job';
+        if (j?.job_id) map[title] = j.job_id;
+      });
+      setJobIdByTitle(map);
+    } catch (e) {
+      console.error(e);
+      setGroups({});
+      toast.error('Failed to load saved candidates');
+    } finally {
+      setLoading(false);
+    }
+  }, [fastapiUrl]);
+
+  useEffect(() => {
+    loadGroups();
+  }, [loadGroups]);
+
+  // Reset to jobs root when clicking Jobs in sidebar again
+  useEffect(() => {
+    const handler = () => setSelectedJobTitle(null);
+    window.addEventListener('nav:saved', handler);
+    return () => window.removeEventListener('nav:saved', handler);
+  }, []);
+
+  const handleDelete = async (jobId, candidateLink) => {
+    try {
+      const url = `${fastapiUrl}/saved-candidates?job_id=${encodeURIComponent(jobId)}&candidate_link=${encodeURIComponent(candidateLink)}`;
+      const res = await fetch(url, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      toast.success('Removed from saved');
+      loadGroups();
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to remove');
+    }
+  };
+
+  const openEdit = (item) => {
+    setSelected(item);
+    setModalOpen(true);
+  };
+
+  const openDetails = (item) => {
+    setSelected(item);
+    setDetailOpen(true);
+  };
+
+  const loadCandidateInfoForJob = useCallback(async (jobId) => {
+    if (!jobId || candidateInfoCache[jobId]) return;
+    try {
+      const res = await fetch(`${fastapiUrl}/sourcing-jobs/${jobId}/results`);
+      const data = await res.json();
+      const map = {};
+      (data.candidates || []).forEach(c => { map[c.link] = c; });
+      setCandidateInfoCache(prev => ({ ...prev, [jobId]: map }));
+    } catch (e) {
+      console.error('Failed loading candidates for job', jobId, e);
+    }
+  }, [fastapiUrl, candidateInfoCache]);
+
+  const updateRank = async (jobId, candidate_link, newRank) => {
+    try {
+      await fetch(`${fastapiUrl}/saved-candidates`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId, candidate_link, rank: newRank })
+      });
+      loadGroups();
+    } catch (e) {
+      toast.error('Failed to update rank');
+    }
+  };
+
+  const toggleHired = async (jobId, isHired) => {
+    try {
+      const status = isHired ? 'completed' : 'hired';
+      await fetch(`${fastapiUrl}/sourcing-jobs/${jobId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      loadGroups();
+      toast.success(status === 'hired' ? 'Marked as hired' : 'Marked as not hired');
+    } catch (e) {
+      toast.error('Failed to update job status');
+    }
+  };
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Jobs</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-12 text-gray-400">Loading jobs...</div>
+          ) : Object.keys(groups).length === 0 ? (
+            <div className="text-center py-12 text-gray-400">No jobs yet.</div>
+          ) : selectedJobTitle ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">{selectedJobTitle}</h3>
+                  {(() => {
+                    const items = (groups[selectedJobTitle] || []);
+                    const derivedJobId = items[0]?.job_id || jobIdByTitle[selectedJobTitle];
+                    const job = jobs.find(j => j.job_id === derivedJobId);
+                    const updated = job?.updated_at ? new Date(job.updated_at) : null;
+                    const created = job?.created_at ? new Date(job.created_at) : null;
+                    return (
+                      <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
+                        <span className={`px-2 py-0.5 rounded-full border ${job?.status === 'hired' ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/30' : 'bg-gray-700/40 text-gray-300 border-gray-600/60'}`}>{job?.status || '—'}</span>
+                        {created && <span>Created {created.toLocaleString()}</span>}
+                        {!created && updated && <span>Updated {updated.toLocaleString()}</span>}
+                      </div>
+                    );
+                  })()}
+                </div>
+                <Button variant="ghost" onClick={() => setSelectedJobTitle(null)}>Back to Jobs</Button>
+              </div>
+              {Object.entries(groups).filter(([title]) => title === selectedJobTitle).map(([title, items]) => {
+                const jobId = items[0]?.job_id || jobIdByTitle[title];
+                const job = jobs.find(j => j.job_id === jobId);
+                const isHired = job?.status === 'hired';
+                if (jobId) loadCandidateInfoForJob(jobId);
+                const infoMap = jobId ? (candidateInfoCache[jobId] || {}) : {};
+                const sorted = items
+                  .slice()
+                  .sort((a, b) => (Number.isInteger(a.rank) ? a.rank : 1e9) - (Number.isInteger(b.rank) ? b.rank : 1e9));
+                return (
+                  <div key={title}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${isHired ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/30' : 'bg-gray-700/40 text-gray-300 border-gray-600/60'}`}>{isHired ? 'Hired' : (job?.status || '—')}</span>
+                      {jobId && (
+                        <Button variant="ghost" size="sm" onClick={() => toggleHired(jobId, isHired)}>
+                          {isHired ? 'Mark Not Hired' : 'Mark Hired'}
+                        </Button>
+                      )}
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {sorted.map((c, idx) => {
+                        const info = infoMap[c.candidate_link] || {};
+                        const score = c.match_score ?? info.match_score;
+                        // Do not show reasoning here; prioritize notes/contact
+                        const rank = typeof c.rank === 'number' ? c.rank : idx;
+                        return (
+                          <div
+                            key={idx}
+                            className="bg-gray-900/50 border border-gray-800 rounded-lg p-4"
+                            draggable
+                            onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(rank)); }}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const from = parseInt(e.dataTransfer.getData('text/plain') || '-1', 10);
+                              const to = rank;
+                              if (Number.isInteger(from) && Number.isInteger(to) && from !== to && jobId) {
+                                updateRank(jobId, c.candidate_link, to);
+                              }
+                            }}
+                          >
+                            <div className="flex items-start justify-between">
+                              <button
+                                type="button"
+                                onClick={() => openDetails({ ...info, ...c, match_score: score, reasoning })}
+                                className="font-semibold text-left text-blue-300 hover:text-blue-200"
+                                title="View details"
+                              >
+                                {c.name || 'Candidate'}
+                              </button>
+                              <div className="flex items-center gap-2">
+                                {typeof score === 'number' && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 border border-blue-400/30">{score}%</span>
+                                )}
+                                {typeof c.review === 'number' && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-300 border border-yellow-400/30">{c.review}/5</span>
+                                )}
+                                {c.hired && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-400/30">Hired</span>
+                                )}
+                                <Button variant="ghost" size="sm" onClick={() => handleDelete(c.job_id, c.candidate_link)} title="Delete">
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                                <Button size="icon" variant="ghost" onClick={() => openEdit(c)} title="Edit">
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+
+                            {c.notes && (
+                              <ul className="mt-2 list-disc list-inside text-sm text-gray-400 space-y-1">
+                                {String(c.notes)
+                                  .split(/\r?\n|•/)
+                                  .map(s => s.trim())
+                                  .filter(Boolean)
+                                  .slice(0, 10)
+                                  .map((note, i) => (
+                                    <li key={i}>{note}</li>
+                                  ))}
+                              </ul>
+                            )}
+
+                            {(c.email || c.linkedin) && (
+                              <div className="mt-2 text-xs text-gray-400 space-y-1">
+                                {c.email && <div>Email: {c.email}</div>}
+                                {c.linkedin && (
+                                  <div>
+                                    LinkedIn: <a className="text-blue-300 hover:text-blue-200" href={c.linkedin} target="_blank" rel="noreferrer">{c.linkedin}</a>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="mt-3 flex items-center justify-between">
+                              <div className="text-xs text-gray-500">Contacted: {c.contacted ? 'Yes' : 'No'}</div>
+                              {typeof rank === 'number' && jobId && (
+                                <div className="flex items-center gap-2">
+                                  <Button variant="ghost" size="sm" onClick={() => updateRank(jobId, c.candidate_link, Math.max(0, rank - 1))}>↑</Button>
+                                  <span className="text-xs text-gray-400">Rank {rank + 1}</span>
+                                  <Button variant="ghost" size="sm" onClick={() => updateRank(jobId, c.candidate_link, rank + 1)}>↓</Button>
+                                  {c.hired ? (
+                                    <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-400/30">Hired</span>
+                                  ) : (
+                                    <Button
+                                      variant="success"
+                                      size="sm"
+                                      loading={hiringLink === c.candidate_link}
+                                      disabled={hiringLink === c.candidate_link}
+                                      onClick={async () => {
+                                        try {
+                                          setHiringLink(c.candidate_link);
+                                          await fetch(`${fastapiUrl}/sourcing-jobs/${jobId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'hired' }) });
+                                          await fetch(`${fastapiUrl}/saved-candidates`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: jobId, candidate_link: c.candidate_link, hired: true }) });
+                                          toast.success('Marked hired');
+                                          loadGroups();
+                                        } catch {
+                                          toast.error('Failed to mark hired');
+                                        } finally {
+                                          setHiringLink(null);
+                                        }
+                                      }}
+                                    >Mark Hired</Button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid gap-6 md:gap-7 md:grid-cols-2">
+              {Object.entries(groups).map(([title, items]) => {
+                const jobId = items[0]?.job_id || jobIdByTitle[title];
+                const job = jobs.find(j => j.job_id === jobId);
+                const isHired = job?.status === 'hired';
+                const hiredCandidate = items.find(i => i.hired);
+                const avatars = items.slice(0, 5);
+                return (
+                  <div key={title} className={`p-6 md:p-7 rounded-xl border ${isHired ? 'border-emerald-600/60 bg-emerald-900/20' : 'border-gray-800 bg-gray-900/40'} shadow-sm`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-lg md:text-xl font-semibold text-white truncate">{title}</h3>
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full border ${isHired ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/30' : 'bg-gray-700/40 text-gray-300 border-gray-600/60'}`}>{isHired ? 'Hired' : (job?.status || '—')}</span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-3">
+                          <div className="flex -space-x-2">
+                            {avatars.map((c, i) => (
+                              <div key={i} className="w-7 h-7 rounded-full bg-gray-700 border border-gray-800 text-[11px] flex items-center justify-center text-gray-200" title={c.name || 'Candidate'}>
+                                {(c.name || 'C').split(' ').map(s => s[0]).join('').slice(0,2).toUpperCase()}
+                              </div>
+                            ))}
+                            {items.length > avatars.length && (
+                              <div className="w-7 h-7 rounded-full bg-gray-700 border border-gray-800 text-[11px] flex items-center justify-center text-gray-300">
+                                +{items.length - avatars.length}
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-400">{items.length} saved</span>
+                          <span className="text-[11px] text-gray-500">{job?.updated_at ? `Updated ${new Date(job.updated_at).toLocaleString()}` : (job?.created_at ? `Created ${new Date(job.created_at).toLocaleString()}` : 'Updated just now')}</span>
+                        </div>
+                        {hiredCandidate && <p className="text-xs text-emerald-300 mt-1">Hired: {hiredCandidate.name || 'Candidate'}</p>}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button onClick={() => setSelectedJobTitle(title)} size="sm">Open</Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <CandidateDetailModal
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        candidate={selected}
+      />
+
+      <SavedCandidateEditModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        initial={selected}
+        fastapiUrl={fastapiUrl}
+        nodeApiUrl={nodeApiUrl}
+        onUpdated={loadGroups}
+        onResumeUploaded={loadGroups}
+      />
+    </>
+  );
+};
+
+export default SavedCandidatesList;

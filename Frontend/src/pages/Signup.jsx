@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { FaUser, FaEnvelope, FaLock, FaEye, FaEyeSlash, FaCheck } from 'react-icons/fa';
+import { User, Mail, Lock, Eye, EyeOff, Check, Sparkles } from 'lucide-react';
+import Input from '../components/ui/Input';
+import Button from '../components/ui/Button';
 
 const Signup = () => {
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: ''
+    name: '', email: '', password: '', confirmPassword: ''
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -18,283 +18,196 @@ const Signup = () => {
   const navigate = useNavigate();
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const validatePassword = () => {
-    return {
-      length: formData.password.length >= 6,
-      match: formData.password === formData.confirmPassword && formData.confirmPassword !== ''
-    };
-  };
+  const validatePassword = () => ({
+    length: formData.password.length >= 6,
+    match: formData.password === formData.confirmPassword && formData.confirmPassword !== ''
+  });
 
   const passwordChecks = validatePassword();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
     if (formData.password !== formData.confirmPassword) {
       alert("Passwords don't match");
       return;
     }
-
     if (formData.password.length < 6) {
       alert("Password must be at least 6 characters long");
       return;
     }
-    
     setLoading(true);
-    
     const result = await register({
       name: formData.name,
       email: formData.email,
       password: formData.password
     });
-    
-    if (result.success) {
-      navigate('/dashboard');
-    }
+    if (result.success) navigate('/dashboard');
     setLoading(false);
   };
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex bg-gray-950">
       {/* Left Side - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-indigo-600 via-purple-700 to-pink-700 items-center justify-center p-12">
-        <div className="max-w-md text-white">
-          <h1 className="text-5xl font-bold mb-6">Join Scoutly</h1>
-          <p className="text-xl mb-8 text-purple-100">
-            Transform your recruitment process today
-          </p>
-          <div className="space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-purple-400 bg-opacity-30 rounded-lg flex items-center justify-center flex-shrink-0">
-                <FaCheck className="text-purple-100" />
+      <motion.div 
+        initial={{ opacity: 0, x: -100 }}
+        animate={{ opacity: 1, x: 0 }}
+        className="hidden lg:flex lg:w-1/2 relative overflow-hidden"
+      >
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-purple-700 to-pink-700" />
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNnoiIHN0cm9rZT0iIzFhMjAzZSIgc3Ryb2tlLXdpZHRoPSIyIiBvcGFjaXR5PSIuMSIvPjwvZz48L3N2Zz4=')] opacity-10" />
+        
+        <div className="relative z-10 flex items-center justify-center w-full p-12">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="max-w-md"
+          >
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                <Sparkles className="w-6 h-6 text-white" />
               </div>
-              <div>
-                <p className="font-semibold text-white mb-1">Smart Candidate Matching</p>
-                <p className="text-purple-100 text-sm">AI-powered sourcing from LinkedIn and beyond</p>
-              </div>
+              <h1 className="text-5xl font-bold text-white">Join Scoutly</h1>
             </div>
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-purple-400 bg-opacity-30 rounded-lg flex items-center justify-center flex-shrink-0">
-                <FaCheck className="text-purple-100" />
-              </div>
-              <div>
-                <p className="font-semibold text-white mb-1">Save Hours Every Week</p>
-                <p className="text-purple-100 text-sm">Automate repetitive sourcing tasks</p>
-              </div>
+            
+            <p className="text-xl text-purple-100 mb-8">
+              Transform your recruitment process today
+            </p>
+            
+            <div className="space-y-4">
+              {[
+                { title: 'Smart Candidate Matching', desc: 'AI-powered sourcing from LinkedIn and beyond' },
+                { title: 'Save Hours Every Week', desc: 'Automate repetitive sourcing tasks' },
+                { title: 'Better Quality Hires', desc: 'Find candidates that truly fit your needs' }
+              ].map((feature, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.4 + i * 0.1 }}
+                  className="flex items-start gap-3"
+                >
+                  <div className="w-8 h-8 bg-purple-400/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Check className="w-5 h-5 text-purple-100" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-white mb-1">{feature.title}</p>
+                    <p className="text-purple-100 text-sm">{feature.desc}</p>
+                  </div>
+                </motion.div>
+              ))}
             </div>
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-purple-400 bg-opacity-30 rounded-lg flex items-center justify-center flex-shrink-0">
-                <FaCheck className="text-purple-100" />
-              </div>
-              <div>
-                <p className="font-semibold text-white mb-1">Better Quality Hires</p>
-                <p className="text-purple-100 text-sm">Find candidates that truly fit your needs</p>
-              </div>
-            </div>
-          </div>
+          </motion.div>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Right Side - Signup Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50">
-        <div className="max-w-md w-full">
-          <div className="bg-white rounded-2xl shadow-xl p-8">
-            {/* Mobile Logo */}
-            <div className="lg:hidden text-center mb-8">
-              <h1 className="text-3xl font-bold text-indigo-600">Scoutly</h1>
+      {/* Right Side - Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-950 overflow-y-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full"
+        >
+          <div className="bg-gray-900 rounded-2xl shadow-2xl border border-gray-800 p-8">
+            <div className="lg:hidden mb-8 text-center">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                Scoutly
+              </h1>
             </div>
 
             <div className="mb-8">
-              <h2 className="text-3xl font-bold text-gray-900 mb-2">
-                Create account
-              </h2>
-              <p className="text-gray-600">
-                Start sourcing candidates in minutes
-              </p>
+              <h2 className="text-3xl font-bold text-white mb-2">Create account</h2>
+              <p className="text-gray-400">Start sourcing candidates in minutes</p>
             </div>
 
             <form className="space-y-5" onSubmit={handleSubmit}>
               {error && (
-                <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded">
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg"
+                >
                   <p className="font-medium">Error</p>
                   <p className="text-sm">{error}</p>
-                </div>
+                </motion.div>
               )}
               
-              {/* Name Input */}
               <div>
-                <label htmlFor="name" className="block text-sm font-semibold text-gray-700 mb-2">
-                  Full Name
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FaUser className="text-gray-400" />
-                  </div>
-                  <input
-                    id="name"
-                    name="name"
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={handleChange}
-                    className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-                    placeholder="John Doe"
-                  />
-                </div>
+                <label className="block text-sm font-semibold text-gray-300 mb-2">Full Name</label>
+                <Input name="name" type="text" required value={formData.name} onChange={handleChange} icon={User} placeholder="John Doe" />
               </div>
               
-              {/* Email Input */}
               <div>
-                <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-2">
-                  Email address
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FaEnvelope className="text-gray-400" />
-                  </div>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    required
-                    value={formData.email}
-                    onChange={handleChange}
-                    className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-                    placeholder="you@example.com"
-                  />
-                </div>
+                <label className="block text-sm font-semibold text-gray-300 mb-2">Email address</label>
+                <Input name="email" type="email" required value={formData.email} onChange={handleChange} icon={Mail} placeholder="you@example.com" />
               </div>
               
-              {/* Password Input */}
               <div>
-                <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-2">
-                  Password
-                </label>
+                <label className="block text-sm font-semibold text-gray-300 mb-2">Password</label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FaLock className="text-gray-400" />
-                  </div>
-                  <input
-                    id="password"
-                    name="password"
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={formData.password}
-                    onChange={handleChange}
-                    className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-                    placeholder="Create a password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  >
-                    {showPassword ? (
-                      <FaEyeSlash className="text-gray-400 hover:text-gray-600" />
-                    ) : (
-                      <FaEye className="text-gray-400 hover:text-gray-600" />
-                    )}
+                  <Input name="password" type={showPassword ? 'text' : 'password'} required value={formData.password} onChange={handleChange} icon={Lock} placeholder="Create a password" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300">
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
               
-              {/* Confirm Password Input */}
               <div>
-                <label htmlFor="confirmPassword" className="block text-sm font-semibold text-gray-700 mb-2">
-                  Confirm Password
-                </label>
+                <label className="block text-sm font-semibold text-gray-300 mb-2">Confirm Password</label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FaLock className="text-gray-400" />
-                  </div>
-                  <input
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    required
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-                    placeholder="Confirm your password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  >
-                    {showConfirmPassword ? (
-                      <FaEyeSlash className="text-gray-400 hover:text-gray-600" />
-                    ) : (
-                      <FaEye className="text-gray-400 hover:text-gray-600" />
-                    )}
+                  <Input name="confirmPassword" type={showConfirmPassword ? 'text' : 'password'} required value={formData.confirmPassword} onChange={handleChange} icon={Lock} placeholder="Confirm your password" />
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300">
+                    {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
 
-              {/* Password Requirements */}
               {formData.password && (
-                <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-                  <p className="text-xs font-semibold text-gray-700">Password requirements:</p>
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="bg-gray-800 rounded-lg p-3 space-y-2"
+                >
+                  <p className="text-xs font-semibold text-gray-300">Password requirements:</p>
                   <div className="flex items-center gap-2">
-                    <div className={`w-4 h-4 rounded-full flex items-center justify-center ${passwordChecks.length ? 'bg-green-500' : 'bg-gray-300'}`}>
-                      {passwordChecks.length && <FaCheck className="text-white text-xs" />}
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center ${passwordChecks.length ? 'bg-green-500' : 'bg-gray-700'}`}>
+                      {passwordChecks.length && <Check className="w-3 h-3 text-white" />}
                     </div>
-                    <span className={`text-xs ${passwordChecks.length ? 'text-green-700' : 'text-gray-600'}`}>
-                      At least 6 characters
-                    </span>
+                    <span className={`text-xs ${passwordChecks.length ? 'text-green-400' : 'text-gray-400'}`}>At least 6 characters</span>
                   </div>
                   {formData.confirmPassword && (
                     <div className="flex items-center gap-2">
-                      <div className={`w-4 h-4 rounded-full flex items-center justify-center ${passwordChecks.match ? 'bg-green-500' : 'bg-gray-300'}`}>
-                        {passwordChecks.match && <FaCheck className="text-white text-xs" />}
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center ${passwordChecks.match ? 'bg-green-500' : 'bg-gray-700'}`}>
+                        {passwordChecks.match && <Check className="w-3 h-3 text-white" />}
                       </div>
-                      <span className={`text-xs ${passwordChecks.match ? 'text-green-700' : 'text-gray-600'}`}>
-                        Passwords match
-                      </span>
+                      <span className={`text-xs ${passwordChecks.match ? 'text-green-400' : 'text-gray-400'}`}>Passwords match</span>
                     </div>
                   )}
-                </div>
+                </motion.div>
               )}
 
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-              >
-                {loading ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Creating account...
-                  </div>
-                ) : (
-                  'Create account'
-                )}
-              </button>
+              <Button type="submit" loading={loading} className="w-full" size="lg" variant="primary">
+                {loading ? 'Creating account...' : 'Create account'}
+              </Button>
             </form>
 
-            {/* Login Link */}
             <div className="mt-6 text-center">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-400">
                 Already have an account?{' '}
-                <Link to="/login" className="font-semibold text-indigo-600 hover:text-indigo-500 transition">
+                <Link to="/login" className="font-semibold text-indigo-400 hover:text-indigo-300 transition">
                   Sign in
                 </Link>
               </p>
             </div>
           </div>
 
-          {/* Footer */}
-          <p className="mt-8 text-center text-xs text-gray-500">
+          <p className="mt-8 text-center text-xs text-gray-600">
             © 2025 Scoutly. All rights reserved.
           </p>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

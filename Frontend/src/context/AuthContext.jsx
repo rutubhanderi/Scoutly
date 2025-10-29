@@ -90,6 +90,16 @@ export const AuthProvider = ({ children }) => {
     setError('');
   };
 
+  const refreshUser = async () => {
+    try {
+      const response = await axios.get('/api/auth/me');
+      setUser(response.data.user);
+      return { success: true };
+    } catch (e) {
+      return { success: false };
+    }
+  };
+
   const value = {
     user,
     loading,
@@ -97,6 +107,7 @@ export const AuthProvider = ({ children }) => {
     register,
     login,
     logout,
+    refreshUser,
     isAuthenticated: !!user
   };
 

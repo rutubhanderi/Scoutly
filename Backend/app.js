@@ -19,6 +19,33 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
+// Upload resume for a saved candidate - proxy to FastAPI
+app.post("/api/saved-candidates/resume", auth, upload.single("file"), async (req, res) => {
+  try {
+    const { job_id, candidate_link } = req.body;
+    const file = req.file;
+    if (!file || !job_id || !candidate_link) {
+      return res.status(400).json({ success: false, error: "file, job_id and candidate_link are required" });
+    }
+
+    const formData = new FormData();
+    formData.append("file", file.buffer, { filename: file.originalname, contentType: file.mimetype });
+    formData.append("job_id", job_id);
+    formData.append("candidate_link", candidate_link);
+
+    const fastApiUrl = process.env.FASTAPI_URL || "http://127.0.0.1:8000";
+    const response = await axios.post(
+      `${fastApiUrl}/api/saved-candidates/resume`,
+      formData,
+      { headers: { ...formData.getHeaders() } }
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error proxying resume upload:", error?.response?.data || error.message);
+    res.status(500).json({ success: false, error: error.message || "Failed to upload resume" });
+  }
+});
+
 // Middlewares
 app.use(express.json());
 app.use(cors({

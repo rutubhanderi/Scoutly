@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import Button from '../ui/Button';
 import toast from 'react-hot-toast';
-import { Trash2, Pencil, X } from 'lucide-react';
+import { Trash2, Pencil, X, CheckCircle } from 'lucide-react';
 import SavedCandidateEditModal from './SavedCandidateEditModal';
 import api from '../../api'; // Use the central API service
 
@@ -137,65 +137,63 @@ const SavedCandidatesList = () => {
                 const isHired = job?.status === 'hired';
                 const hiredCandidate = items.find(i => i.hired);
                 const avatars = items.slice(0, 4);
+
                 return (
                   <div
                     key={title}
-                    className={`relative p-6 rounded-xl border transition-all cursor-pointer hover:shadow-lg ${
+                    className={`flex flex-col p-6 rounded-xl border transition-all duration-300 cursor-pointer group ${
                       isHired
-                        ? 'border-emerald-600/60 bg-emerald-900/20 shadow-emerald-500/10'
-                        : 'border-gray-800 bg-gray-900/40 hover:border-gray-700'
+                        ? 'border-emerald-600/50 bg-emerald-900/20 hover:border-emerald-500/80 shadow-emerald-500/10'
+                        : 'border-gray-800 bg-gray-900/40 hover:border-blue-500/30'
                     }`}
                     onClick={() => { setSelectedJobTitle(title); setJobModalOpen(true); }}
                   >
-                    {isHired && (
-                      <span className="absolute top-3 right-3 text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/50">Hired</span>
-                    )}
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-xl font-bold text-white truncate mb-2">{title}</h3>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${
-                            isHired
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50'
-                              : 'bg-gray-700/40 text-gray-300 border-gray-600/60'
-                          }`}>
-                            {isHired ? '✓ Hired' : 'Active'}
-                          </span>
-                          <span className="text-xs text-gray-400">{items.length} candidate{items.length !== 1 ? 's' : ''}</span>
-                        </div>
+                    {/* --- CARD HEADER --- */}
+                    <div className="flex-1">
+                      <h3 className="text-xl font-bold text-white group-hover:text-blue-300 transition-colors duration-300 truncate mb-2">{title}</h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${
+                          isHired
+                            ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/30'
+                            : 'bg-blue-500/10 text-blue-300 border-blue-500/30'
+                        }`}>
+                          {isHired ? 'Hired' : 'Active'}
+                        </span>
+                        <span className="text-xs text-gray-400">{items.length} candidate{items.length !== 1 ? 's' : ''}</span>
                       </div>
                     </div>
 
+                    {/* --- HIRED CANDIDATE SECTION (IMPROVED) --- */}
                     {hiredCandidate && (
-                      <div className="mb-4 p-4 rounded-lg bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border border-emerald-500/40 shadow-sm">
-                        <div className="flex items-start justify-between mb-2">
+                      <div className="mt-4 p-4 rounded-lg bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/30 shadow-sm">
+                        <div className="flex items-center gap-2 mb-2">
+                          <CheckCircle className="w-5 h-5 text-emerald-400" />
                           <p className="text-sm font-semibold text-emerald-300">
-                            ✓ Hired Candidate
+                            Hired Candidate
                           </p>
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/50">
-                            Selected
-                          </span>
                         </div>
-                        <p className="text-base font-bold text-white mb-1">{hiredCandidate.name || 'Candidate'}</p>
-                        {hiredCandidate.email && (
-                          <p className="text-xs text-emerald-400/90">{hiredCandidate.email}</p>
-                        )}
+                        <p className="text-lg font-bold text-white">{hiredCandidate.name || 'Candidate'}</p>
                       </div>
                     )}
-
-                    <div className="flex items-center gap-2">
+                    
+                    {/* --- CARD FOOTER --- */}
+                    <div className="mt-auto pt-4 border-t border-gray-800/50 flex items-center justify-between">
                       <div className="flex -space-x-2">
                         {avatars.map((c, i) => (
                           <div
                             key={i}
-                            className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 border-2 border-gray-900 flex items-center justify-center text-white text-xs font-semibold"
+                            className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-white text-xs font-semibold ${
+                              isHired ? 'border-emerald-900/50 bg-emerald-600' : 'border-gray-900 bg-blue-600'
+                            }`}
                             title={c.name || 'Candidate'}
                           >
                             {(c.name || 'C').split(' ').map(s => s[0]).join('').slice(0,2).toUpperCase()}
                           </div>
                         ))}
                         {items.length > avatars.length && (
-                          <div className="w-8 h-8 rounded-full bg-gray-700 border-2 border-gray-900 flex items-center justify-center text-gray-300 text-xs font-semibold">
+                          <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-semibold ${
+                            isHired ? 'border-emerald-900/50 bg-emerald-800 text-emerald-300' : 'border-gray-900 bg-gray-700 text-gray-300'
+                          }`}>
                             +{items.length - avatars.length}
                           </div>
                         )}
@@ -212,6 +210,7 @@ const SavedCandidatesList = () => {
         </CardContent>
       </Card>
 
+      {/* The modal JSX below this point remains unchanged as its logic was already correct */}
       {selectedJobTitle && jobModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-6xl max-h-[85vh] overflow-y-auto bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl">

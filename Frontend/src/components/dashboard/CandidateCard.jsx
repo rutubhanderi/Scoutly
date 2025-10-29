@@ -83,7 +83,7 @@ const CandidateCard = ({ candidate, onSave, isSaved, index = 0 }) => {
         {/* Reasoning */}
         {candidate.reasoning && (
           <div className="mb-5 p-3.5 bg-gray-800/50 rounded-lg border border-gray-700/80">
-            <p className="text-[12px] text-gray-400 italic line-clamp-2">
+            <p className="text-[12px] text-gray-400 italic">
               {candidate.reasoning}
             </p>
           </div>

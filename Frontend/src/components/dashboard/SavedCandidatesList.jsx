@@ -110,7 +110,6 @@ const SavedCandidatesList = () => {
     }
   };
   
-  // The rest of the component's JSX remains the same...
   return (
     <>
       <Card>

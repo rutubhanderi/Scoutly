@@ -5,7 +5,7 @@ from typing import Optional
 import os
 import shortuuid
 from io import BytesIO
-
+from datetime import datetime, timedelta
 from utils.database import TalentPipelineDB
 from utils.auth import verify_token
 from worker import run_sourcing_task
@@ -587,6 +587,108 @@ async def cleanup_old_jobs(days_old: int = 30, current_user: dict = Depends(veri
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to cleanup old jobs: {str(e)}")
+@app.get("/analytics")
+async def get_analytics_data(current_user: dict = Depends(verify_token)):
+    """
+    Calculates and returns key analytics for the recruiting dashboard.
+    """
+    try:
+        all_jobs = db.get_all_jobs()
+        all_candidates = list(db.candidates_collection.find({}, {'_id': 0}))
+        all_saved = db.get_saved_candidates()
+
+        # 1. High-Level KPIs
+        total_jobs = len(all_jobs)
+        completed_jobs = [j for j in all_jobs if j.get('status') == 'completed' or j.get('status') == 'hired']
+        hired_jobs = [j for j in all_jobs if j.get('status') == 'hired']
+        
+        total_hires = len(hired_jobs)
+        total_completed = len(completed_jobs)
+        hire_rate = (total_hires / total_completed * 100) if total_completed > 0 else 0
+
+        # Calculate Average Time to Hire
+        total_hire_time_days = 0
+        if total_hires > 0:
+            for job in hired_jobs:
+                created_at = job.get('created_at')
+                # updated_at reflects the last status change (to hired)
+                updated_at = job.get('updated_at')
+                if isinstance(created_at, datetime) and isinstance(updated_at, datetime):
+                    time_diff = updated_at - created_at
+                    total_hire_time_days += time_diff.total_seconds() / (60 * 60 * 24)
+        avg_time_to_hire = (total_hire_time_days / total_hires) if total_hires > 0 else 0
+
+        kpis = {
+            "total_jobs": total_jobs,
+            "total_candidates_sourced": len(all_candidates),
+            "total_hires": total_hires,
+            "hire_rate": round(hire_rate, 1),
+            "avg_time_to_hire": round(avg_time_to_hire, 1)
+        }
+
+        # 2. Sourcing Funnel
+        funnel = {
+            "sourced": len(all_candidates),
+            "saved": len(all_saved),
+            "contacted": len([c for c in all_saved if c.get('contacted')]),
+            "hired": total_hires
+        }
+
+        # 3. Source Effectiveness
+        source_effectiveness = {
+            "linkedin": {"sourced": 0, "avg_score": 0, "hires": 0, "total_score": 0},
+            "github": {"sourced": 0, "avg_score": 0, "hires": 0, "total_score": 0}
+        }
+        
+        # Correlate saved candidates (with hire info) to their original source
+        hired_links = {c['candidate_link'] for c in all_saved if c.get('hired')}
+        
+        for cand in all_candidates:
+            source = cand.get('source', '').lower()
+            if source in source_effectiveness:
+                source_effectiveness[source]['sourced'] += 1
+                score = cand.get('match_score', 0)
+                if score:
+                    source_effectiveness[source]['total_score'] += score
+                if cand.get('link') in hired_links:
+                    source_effectiveness[source]['hires'] += 1
+
+        for platform in source_effectiveness:
+            if source_effectiveness[platform]['sourced'] > 0:
+                source_effectiveness[platform]['avg_score'] = round(
+                    source_effectiveness[platform]['total_score'] / source_effectiveness[platform]['sourced']
+                )
+            del source_effectiveness[platform]['total_score']
+
+        # 4. Match Score Distribution
+        score_distribution = {
+            "excellent": 0, # 90-100
+            "good": 0,      # 75-89
+            "fair": 0,      # 60-74
+            "low": 0        # < 60
+        }
+        for cand in all_candidates:
+            score = cand.get('match_score')
+            if score is not None:
+                if score >= 90:
+                    score_distribution['excellent'] += 1
+                elif score >= 75:
+                    score_distribution['good'] += 1
+                elif score >= 60:
+                    score_distribution['fair'] += 1
+                else:
+                    score_distribution['low'] += 1
+        
+        return {
+            "kpis": kpis,
+            "funnel": funnel,
+            "source_effectiveness": source_effectiveness,
+            "score_distribution": score_distribution
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve analytics: {str(e)}")
+
 
 @app.get("/")
 async def root():

@@ -13,7 +13,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../co
 import { Upload, FileText, Search, Sparkles } from 'lucide-react';
 import api from '../api'; // Use the central API service
 import { useAuth } from '../context/AuthContext';
-
+import AnalyticsPage from '../components/analytics/AnalyticsPage';
 const Dashboard = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
@@ -477,7 +477,11 @@ const Dashboard = () => {
             )}
 
             {activeSection === 'saved' && <SavedCandidatesList />}
-            
+            {activeSection === 'analytics' && (
+      <motion.div key="analytics" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+        <AnalyticsPage />
+      </motion.div>
+    )}
             {activeSection === 'settings' && (
               <motion.div key="settings" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
                 <Card><CardHeader><CardTitle className="text-xl md:text-2xl">Profile</CardTitle></CardHeader><CardContent>

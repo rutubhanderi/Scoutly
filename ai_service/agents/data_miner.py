@@ -120,13 +120,32 @@ class DataMiner:
                 user_details_resp = requests.get(item['url'], headers=self.github_headers)
                 user_details_resp.raise_for_status()
                 user_details = user_details_resp.json()
-                
+                # Fetch repositories for the user (top by stars)
+                repos = []
+                try:
+                    repos_resp = requests.get(user_details.get('repos_url'), headers=self.github_headers, params={'per_page': 50, 'sort': 'updated'})
+                    repos_resp.raise_for_status()
+                    repos_data = repos_resp.json() or []
+                    # Sort by stargazers_count desc and take top 8
+                    repos_sorted = sorted(repos_data, key=lambda r: r.get('stargazers_count', 0), reverse=True)[:8]
+                    repos = [
+                        {
+                            'name': r.get('name'),
+                            'stars': r.get('stargazers_count', 0),
+                            'description': r.get('description') or ''
+                        }
+                        for r in repos_sorted
+                    ]
+                except Exception as e:
+                    print(f"[Data Miner] -> Failed to fetch repos for {item.get('login')}: {e}")
+
                 profiles.append({
                     "name": user_details.get('name') or item.get('login'),
                     "title": item.get('login'), # Using login as a title fallback
                     "link": item.get('html_url'),
                     "snippet": user_details.get('bio', 'No bio provided.'), 
-                    "source": "GitHub"
+                    "source": "GitHub",
+                    "repos": repos
                 })
             
             print(f"[Data Miner] -> Found {len(profiles)} potential profiles from GitHub API.")
